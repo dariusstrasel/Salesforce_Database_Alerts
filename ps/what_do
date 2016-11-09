@@ -1,0 +1,9 @@
+Focus of the MXW Alerts function
+
+Phase 1
+-Be able to run queries against force.com API
+-Store the data retrieved from the queries and act on it (ie - send an email or alert a user)
+
+Phase 2 
+-Be able to set thresholds to compare changes from day-to-day (ie - 5% threshold for active users)
+-Be able to compare changes from day-to-day (ie - Bosch had 1000 active users yesterday, 1100 today, change of 10%)
