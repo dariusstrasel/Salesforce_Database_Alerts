@@ -13,6 +13,7 @@ def read_credentials(file_store_name, key):
         with open(secrets_filename, 'r') as f:
             try:
                 api_keys = json.loads(f.read())
+                print(">>>: " + key)
                 return api_keys[key]
             except json.JSONDecodeError:
                 print("'" + key + "'" + " key is missing from secrets file.")
@@ -58,8 +59,24 @@ def execute_soql_query(sql_statement):
     sfdc_password = read_credentials('salesforce', 'sfdc_password')
 
     sf = Salesforce(username=sfdc_username, password=sfdc_password, security_token=sfdc_token)
-    enviorment_hub_results = sf.query(sql_statement)
-    return enviorment_hub_results
+    enviornment_hub_results = sf.query(sql_statement)
+    return enviornment_hub_results
 
+test_query = "SELECT  SFDCID__C IsActive_Status_Not_Active FROM Contact"
+test_query2 = "Select ID from Contact"
+#print(execute_soql_query(test_query))
 
-print(execute_soql_query("SELECT COUNT(SFDCID__C) IsActive_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != ''Active'') OR (mxw__Is_Active__c = false and Status__c = ''Active'')"))
+import subprocess
+import shutil
+import pprint
+#subprocess.run(["force"], shell=True)
+
+def execute_command(command):
+    output = None
+    try:
+        output = subprocess.check_output(command)
+    except subprocess.CalledProcessError as e:
+        output = e.output
+    return output.decode()
+
+print(execute_command(["force", "logins"]))r
