@@ -55,9 +55,8 @@ $OutputDirectory > test.txt
 Get-Date > test_output.txt
 $ImportFile = './accounts.csv'
 $queries = New-Object System.Collections.ArrayList
-    $queries.Add('SELECT COUNT(SFDCID__C) IsActive_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != ''Active'') OR (mxw__Is_Active__c = false and Status__c = ''Active'')')
-    $queries.Add('SELECT COUNT(SFDCID__C) Active FROM Contact where mxw__Is_Active__c = true')
-    $queries.Add('SELECT COUNT(SFDCID__C) Inactive FROM Contact where mxw__Is_Active__c = false')
+    $queries.Add('SELECT COUNT(SFDCID__C) IsActiveTrue_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != ''Active'')')
+    $queries.Add('SELECT COUNT(SFDCID__C) IsActiveFalse_Status_Active FROM Contact where (mxw__Is_Active__c = false and Status__c = ''Active'')')
 #Import Account csv and parse
 $accounts = Import-Csv $ImportFile -Delimiter ','
 
