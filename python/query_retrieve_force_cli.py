@@ -9,7 +9,7 @@
     4. Export resulting table to 'output_query_file.csv'
     ############## BEGIN RUNNING QUERIES ################
     5. Create output file for test results
-    6. Import './accounts.csv'
+    6. Import './accounts.csv' # Used to login using the account's admin user
     7. Create test list
     8. Run test equeries for the accounts imported from file.
     9. Save queries to output file
@@ -22,9 +22,6 @@ import os
 import json
 import csv
 import subprocess
-
-from simple_salesforce import Salesforce
-
 
 def read_credential(file_store_name, key):
     print(">>>read_credentials: " + file_store_name)
@@ -42,7 +39,6 @@ def read_credential(file_store_name, key):
         print("No secrets file detected. Creating new one...")
         new_file = open(secrets_filename, 'w')
         # new_file.write('{"sfdc_token": "token","sfdc_username": "token","sfdc_password": "token"}')
-
 
 def send_email(user, pwd, recipient, subject, body):
     print(">>>send_email: " + "To: " + recipient + " From: " + user)
@@ -69,8 +65,11 @@ def send_email(user, pwd, recipient, subject, body):
     except:
         print("Failed to send mail")
 
-
 class session:
+
+    token = read_credential('salesforce', 'sfdc_token')
+    username = read_credential('salesforce', 'sfdc_username')
+    password = read_credential('salesforce', 'sfdc_password')
 
     is_logged_in = False
 
@@ -78,8 +77,7 @@ class session:
         pass
 
     def create_login_session(self):
-        command.execute(["force", "logins"])
-
+        command.execute(["force", "login", "-u ", session.username, "-p ", session.password])
 
 class command:
 
@@ -97,6 +95,17 @@ class command:
             output = e.output
         return output.decode()
 
+def csv_read(file):
+    with open(file) as csvfile:
+        reader = csv.DictReader(csvfile)
+    for row in reader:
+        print(row['first_name'], row['last_name'])
+
+def csv_write(file, file_rows):
+    with open(file, 'w', newline='') as csvfile:
+        spamwriter = csv.writer(csvfile, delimiter=' ',
+                                quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        spamwriter.writerow(file_rows)
 
 class testrunner:
 
@@ -114,23 +123,9 @@ class testrunner:
     def __init__(self):
         pass
 
-
 class log:
     """Create log file and log results into file"""
 
+
+
 #send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
-
-# def execute_soql_query(sql_statement) needs to be converted to force-cli class
-def execute_soql_query(sql_statement):
-    """Will execute inputted SOQL statement to authenticated Salesforce org."""
-    sfdc_token = read_credential('salesforce', 'sfdc_token')
-    sfdc_username = read_credential('salesforce', 'sfdc_username')
-    sfdc_password = read_credential('salesforce', 'sfdc_password')
-
-    sf = Salesforce(username=sfdc_username, password=sfdc_password, security_token=sfdc_token)
-    enviornment_hub_results = sf.query(sql_statement)
-    return enviornment_hub_results
-
-
-
-
