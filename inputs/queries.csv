@@ -1,0 +1,4 @@
+query
+SELECT COUNT(SFDCID__C) IsActive_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != 'Active') OR (mxw__Is_Active__c = false and Status__c = 'Active')
+SELECT COUNT(SFDCID__C) Active FROM Contact where mxw__Is_Active__c = true
+SELECT COUNT(SFDCID__C) Inactive FROM Contact where mxw__Is_Active__c = false
