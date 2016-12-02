@@ -19,26 +19,27 @@
 
 import time
 import os
-import json
 import csv
 import subprocess
 
-def read_credential(file_store_name, key):
-    print(">>>read_credentials: " + file_store_name)
-    secrets_filename = file_store_name
-    api_keys = {}
-    try:
-        with open(secrets_filename, 'r') as f:
-            try:
-                api_keys = json.loads(f.read())
-                print(">>>: " + key)
-                return api_keys[key]
-            except json.JSONDecodeError:
-                print("'" + key + "'" + " key is missing from secrets file.")
-    except FileNotFoundError:
-        print("No secrets file detected. Creating new one...")
-        new_file = open(secrets_filename, 'w')
-        # new_file.write('{"sfdc_token": "token","sfdc_username": "token","sfdc_password": "token"}')
+def import_queries(file_path):
+    secrets_filename = file_path
+    query_list = {}
+    with open(secrets_filename, 'r') as file:
+        query_list = csv.DictReader(file, delimiter=',')
+        return [command.run_query(query['query']) for query in query_list]
+
+def run_tests(accounts_path, tests_path):
+    print(">>>read_credentials: " + accounts_path)
+    secrets_filename = accounts_path
+    account_list = {}
+    with open(secrets_filename, 'r') as file:
+        account_list = csv.DictReader(file, delimiter=',')
+        for account in account_list:
+            command.login(account['username'], account['pw'])
+            import_queries(tests_path)
+            break
+
 
 def send_email(user, pwd, recipient, subject, body):
     print(">>>send_email: " + "To: " + recipient + " From: " + user)
@@ -65,25 +66,11 @@ def send_email(user, pwd, recipient, subject, body):
     except:
         print("Failed to send mail")
 
-class session:
-
-    token = read_credential('salesforce', 'sfdc_token')
-    username = read_credential('salesforce', 'sfdc_username')
-    password = read_credential('salesforce', 'sfdc_password')
-
-    is_logged_in = False
-
-    def login_state(self):
-        pass
-
-    def create_login_session(self):
-        command.execute(["force", "login", "-u ", session.username, "-p ", session.password])
 
 class command:
 
     def __init__(self):
         """Do stuff which will login and create an active session with Salesforce?"""
-        print(session.is_logged_in)
         pass
 
     def execute(command):
@@ -93,25 +80,16 @@ class command:
             output = subprocess.check_output(command)
         except subprocess.CalledProcessError as e:
             output = e.output
+        print(output.decode())
         return output.decode()
 
-def csv_read(file):
-    with open(file) as csvfile:
-        reader = csv.DictReader(csvfile)
-    for row in reader:
-        print(row['first_name'], row['last_name'])
+    def login(username, password):
+        return command.execute("force login -u=%s -p=%s" % (username, password))
 
-def csv_write(file, file_rows):
-    with open(file, 'w', newline='') as csvfile:
-        spamwriter = csv.writer(csvfile, delimiter=' ',
-                                quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        spamwriter.writerow(file_rows)
+    def run_query(sql_statement):
+        return command.execute("force query " + sql_statement)
 
-class testrunner:
 
-    queries = ["SELECT COUNT(SFDCID__C) IsActive_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != ''Active'') OR (mxw__Is_Active__c = false and Status__c = ''Active'')","SELECT COUNT(SFDCID__C) Active FROM Contact where mxw__Is_Active__c = true", "SELECT COUNT(SFDCID__C) Inactive FROM Contact where mxw__Is_Active__c = false"  ]
-
-    def email_results(self):
         """
         $Results = Import-CSV -delimiter ',' .\output_query_file.csv | where RecordCount -gt 0
 
@@ -120,12 +98,12 @@ class testrunner:
             $message += $row.Account + ' has failed rule ' + $row.RuleName + ' by ' + $row.RecordCount + ' records'+ "`n"
         }
         """
-    def __init__(self):
-        pass
 
-class log:
+
+def logging():
     """Create log file and log results into file"""
-
-
+    pass
 
 #send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
+
+print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
