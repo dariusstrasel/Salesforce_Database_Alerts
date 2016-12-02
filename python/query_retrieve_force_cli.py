@@ -37,7 +37,7 @@ def run_tests(accounts_path, tests_path):
         account_list = csv.DictReader(file, delimiter=',')
         for account in account_list:
             command.login(account['username'], account['pw'])
-            import_queries(tests_path)
+            command.run_queries(tests_path)
             break
 
 
@@ -89,6 +89,13 @@ class command:
     def run_query(sql_statement):
         return command.execute("force query " + sql_statement)
 
+    def run_queries(file_path):
+        query_filename = file_path
+        query_list = {}
+        with open(query_filename, 'r') as file:
+            query_list = csv.DictReader(file, delimiter=',')
+            return [command.run_query(query['query']) for query in query_list]
+
 
         """
         $Results = Import-CSV -delimiter ',' .\output_query_file.csv | where RecordCount -gt 0
@@ -100,10 +107,31 @@ class command:
         """
 
 
-def logging():
-    """Create log file and log results into file"""
-    pass
+class log:
+
+
+    def __init__(self, filename):
+        self.filename = filename
+
+    def write(self, text):
+        with open(self.filename, 'w', newline=' ') as csvfile:
+            log_file = csv.writer(csvfile, delimiter=',', quoting=csv.QUOTE_ALL)
+            log_file.writerow(text)
+
+    def write_log(self, fields):
+        with open(self.filename, 'w') as csvfile:
+            fieldnames = list(fields[0].keys())
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL, lineterminator='\n')
+            writer.writeheader()
+            return [writer.writerow(item) for item in fields]
+
+
+
 
 #send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
 
-print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
+#print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
+python_output_query_file = log('../outputs/python_output_query_file.csv')
+
+dict_list = [{'first_name': 'Baked', 'last_name': 'Beans'}, {'first_name': 'Lovely', 'last_name': 'Spam'}, {'first_name': 'Wonderful', 'last_name': 'Spam'}]
+python_output_query_file.write_log(dict_list)
