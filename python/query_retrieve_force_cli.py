@@ -22,10 +22,12 @@ import os
 import csv
 import subprocess
 import sys
+import re
 
 
 def import_queries(file_path):
     # Parses each line of the ./inputs/queries.csv file and executes them in OS shell using force-cli
+    print("def import_queries(%s)" % file_path)
     query_file_path = file_path
     query_list = {}
     with open(query_file_path, 'r') as file:
@@ -36,18 +38,21 @@ def import_queries(file_path):
 def run_tests(accounts_path, tests_path):
     # Parses each line of .inputs/accounts.csv, logs into using force-cli and executes each test case
     # print(">>>read_credentials: " + accounts_path)
+    #print("def run_tests(%s, %s)" % accounts_path, tests_path)
+    print("test: " + str(__name__))
     tests_file_path = accounts_path
     account_list = {}
     with open(tests_file_path, 'r') as file:
         account_list = csv.DictReader(file, delimiter=',')
         for account in account_list:
             command.login(account['username'], account['pw'])
-            command.run_queries(tests_path)
-            break  # Stops the loop from processing every account; just for testing
+            command.run_queries(tests_path, account['username'])
+            # break  # Stops the loop from processing every account; just for testing
 
 
 def send_email(user, pwd, recipient, subject, body):
     # Sends an email using passed in arguments, catches errors in try/except
+    print("send_email(%s, %s, %s, %,s %s)" % user, pwd, recipient, subject, body)
     print(">>>send_email: " + "To: " + recipient + " From: " + user)
     import smtplib
 
@@ -72,17 +77,19 @@ def send_email(user, pwd, recipient, subject, body):
     except:
         print("Failed to send mail")
 
+def send_failed_test_email(user, pwd, recipient, subject, account, rule_name, record_count):
+    body = "{account} has failed rule '{rule_name}' with a record count of 'record_count)'."
+    send_email(user, pwd, recipient, subject, body)
 
 class command:
     """This class file serves as a force-cli wrapper library for Python. This will execute each command using the
     subprocess Python module."""
     def __init__(self):
-
-        """Do stuff which will login and create an active session with Salesforce?"""
         pass
 
     def execute(command):
         """This method will execute the string statement passed in."""
+        print("execute(%s)" % command)
         output = None
         try:
             output = subprocess.check_output(command)
@@ -94,30 +101,31 @@ class command:
         """Used to pass a login to force-cli using username, password arguments."""
         return command.execute("force login -u=%s -p=%s" % (username, password))
 
-    def run_query(sql_statement):
+    def parse_query_result(query):
+        regex = r"\s([0-9]\d*)"
+        try:
+            return re.findall(regex, query)[0]
+        except Exception:
+            return query
+
+    def run_query(sql_statement, account):
         """Will execute a single SOQL statement."""
+        python_output_query_file = log('../outputs/python_output_query_file.csv')
+        query_result = command.execute("force query " + sql_statement)
+        dict_list = [{'Account': account, 'Rule_Name': sql_statement, 'Record_Count': command.parse_query_result(query_result)}]
+        python_output_query_file.write_csv(dict_list)
+
+        command.execute("force query " + sql_statement)
+
         return command.execute("force query " + sql_statement)
 
-    def run_queries(file_path):
+    def run_queries(file_path, account):
         """Will execute n amount of SOQL statements based on parsed query file."""
         query_filename = file_path
         query_list = {}
         with open(query_filename, 'r') as file:
             query_list = csv.DictReader(file, delimiter=',')
-            return [command.run_query(query['query']) for query in query_list]
-
-    def output_command(self, command):
-        pass
-
-
-        """
-        $Results = Import-CSV -delimiter ',' .\output_query_file.csv | where RecordCount -gt 0
-
-        foreach($row in $results)
-        {
-            $message += $row.Account + ' has failed rule ' + $row.RuleName + ' by ' + $row.RecordCount + ' records'+ "`n"
-        }
-        """
+            return [command.run_query(query['query'], account) for query in query_list]
 
 
 class log:
@@ -139,7 +147,8 @@ class log:
 
     def write_csv(self, fields):
         """Will write to a csv file """
-        with open(self.filename, 'w') as csvfile:
+        print("def write_csv(%s)" % fields)
+        with open(self.filename, 'a') as csvfile:
             fieldnames = list(fields[0].keys())
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL, lineterminator='\n')
             writer.writeheader()
@@ -148,19 +157,15 @@ class log:
 
 
 
-#send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
-
-#print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
-python_output_query_file = log('../outputs/python_output_query_file.csv')
-
-dict_list = [{'first_name': 'Baked', 'last_name': 'Beans'}, {'first_name': 'Lovely', 'last_name': 'Spam'}, {'first_name': 'Wonderful', 'last_name': 'Spam'}]
-# python_output_query_file.write_log(dict_list)
-
-print(command.login("mxw_cmx@preventure.com","cmxforc3"))
-print(command.run_query("SELECT COUNT(SFDCID__C) Active FROM Contact where mxw__Is_Active__c = true"))
-
 def main():
-    pass
+    start_time = time.time()
+    print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
+    print("--- %s seconds elapsed ---" % (time.time() - start_time))
+    # send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
+    send_failed_test_email()
+    # command.run_query("SELECT COUNT(SFDCID__C) Active FROM Contact", "test_account")
+    # print(command.parse_query_result(" Active -------- 20     (1 records)"))
+
     # If no args are specified, print "Nothing specified" and return pass
     # If args specified, pass them into "run_tests", arg[0] should be account path and arg[1] should be test path,
     # while arg[2] can flag whether emails should be sent. Default False, unless explicitly passed.
