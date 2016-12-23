@@ -43,7 +43,7 @@ class Utility:
         return True
 
     @staticmethod
-    def file_exist(file_path):
+    def path_exist(file_path):
         return os.path.exists(file_path)
 
     @staticmethod
@@ -51,10 +51,8 @@ class Utility:
         if len(arg_cls) < 3:
             print("Not enough parameters passed. Need %s more" % (3 - len(argv)))
             return False
-        if Utility.file_exist(arg_cls[1]):
-            if Utility.file_exist(arg_cls[2]):
-                print(True)
-                return True
+        print([Utility.path_exist(argument) for argument in argv[1:]])
+
         print("'%s' and '%s' are not files/do not exist." % (arg_cls[1], arg_cls[2]))
         return False
 
@@ -225,10 +223,13 @@ class TestRunner:
 
 def main():
     # print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
-    account_file = "../outputs/accounts.csv", ["username", "pw"]
-    query_file = "../inputs/queries.csv", ["query"]
-    active_tests = TestRunner(account_file, query_file)
-    print(active_tests.execute_queries_on_accounts())
+    if Utility.user_input_is_valid(argv):
+        account_file = "../outputs/accounts.csv", ["username", "pw"]
+        account_file =
+        query_file = "../inputs/queries.csv", ["query"]
+        active_tests = TestRunner(account_file, query_file)
+        print(active_tests.execute_queries_on_accounts())
+    exit()
 
     # if user_input_is_valid(argv):
     #     start_time = time.time()
