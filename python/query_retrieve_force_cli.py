@@ -22,8 +22,6 @@
     -Refactor query runner (ensure single responsibility principal)
     -Add sys.argv to allow CLI level script execution
     -Add CLI input validators (check for 2 parameters, both are paths.)
-
-
 '''
 
 import os
@@ -32,51 +30,47 @@ import csv
 import subprocess
 from sys import argv
 import re
-import datetime
+import colorama
 
 
 class Utility:
 
-    def is_path(input):
+    @staticmethod
+    def is_path(input_string):
         regex = r"(.+)/([^/]+)$"
-        if len(re.findall(regex, input)) == 0:
+        if len(re.findall(regex, input_string)) == 0:
             return False
         return True
 
+    @staticmethod
     def file_exist(file_path):
         return os.path.exists(file_path)
 
+    @staticmethod
     def user_input_is_valid(arg_cls):
         if len(arg_cls) < 3:
             print("Not enough parameters passed. Need %s more" % (3 - len(argv)))
             return False
-        if file_exist(arg_cls[1]):
-            if file_exist(arg_cls[2]):
+        if Utility.file_exist(arg_cls[1]):
+            if Utility.file_exist(arg_cls[2]):
                 print(True)
                 return True
         print("'%s' and '%s' are not files/do not exist." % (arg_cls[1], arg_cls[2]))
         return False
 
+    @staticmethod
+    def generate_rule_name(string_input):
+        result = ""
+        for item in string_input.split(" "):
+            formatted_item = item[0].upper()
+            if item[0] == "(":
+                result += formatted_item + ")"
+            if item[0] == ")":
+                result += formatted_item + "("
+            else:
+                result += formatted_item
+        return result
 
-# def import_queries(file_path):
-#     # Parses each line of the ./inputs/queries.csv file and executes them in OS shell using force-cli
-#     print("def import_queries(%s)" % file_path)
-#     query_file_path = file_path
-#     query_list = {}
-#     with open(query_file_path, 'r') as file:
-#         query_list = csv.DictReader(file, delimiter=',')
-#         return [Command.run_query(sql_statement['query']) for sql_statement in query_list]
-
-
-# def run_tests(account_input_file, query_input_file):
-#     # Parses each line of .inputs/accounts.csv, logs into using force-cli and executes each test case
-#     print("def run_tests(%s, %s)" % (account_input_file, query_input_file))
-#     with open(account_input_file, 'r') as file:
-#         account_list = csv.DictReader(file, delimiter=',')
-#         for account in account_list:
-#             Command.login(account['username'], account['pw'])
-#             FileStore.read_queries(query_input_file, account['username'])
-#             # break  # Stops the loop from processing every account; just for testing
 
 class Email:
 
@@ -109,9 +103,20 @@ class Email:
             print("Failed to send mail")
 
     @staticmethod
-    def send_failed_test_email(self, user, pwd, recipient, subject, account, rule_name, record_count):
-        body = "{account} has failed rule '{rule_name}' with a record count of '{record_count}'."
-        send_email(user, pwd, recipient, subject, body)
+    def catch_failed_test(record_count, account, rule_name):
+        print("def catch_failed_test(%s, %s, %s)" % (record_count, account, rule_name))
+        # user = ""
+        # pwd = ""
+        # recipient = account
+        # subject = ""
+        body = "%s has failed rule '%s' with a record count of '%s'." % (account, rule_name, record_count)
+
+        if int(record_count) == 0:
+            print()
+            print('\033[31m' + body)
+            print(colorama.Style.RESET_ALL)
+            # Email.send_email(user, pwd, recipient, subject, body)
+
 
 class Command:
     """This class file serves as a force-cli wrapper library for Python. This will execute each Command using the
@@ -119,7 +124,7 @@ class Command:
     def __init__(self):
         pass
 
-
+    @staticmethod
     def execute(command):
         """This method will execute the string statement passed in."""
         print("execute(%s)" % command)
@@ -130,12 +135,12 @@ class Command:
             output = e.output
         return output.decode()
 
-
+    @staticmethod
     def login(username, password):
         """Used to pass a login to force-cli using username, password arguments."""
         return Command.execute("force login -u=%s -p=%s" % (username, password))
 
-
+    @staticmethod
     def parse_query_result(query):
         regex = r"\s([0-9]\d*)"
         try:
@@ -143,17 +148,23 @@ class Command:
         except Exception:
             return query
 
-
+    @staticmethod
     def run_query(sql_statement, account):
         """Will execute a single SOQL statement."""
-        python_output_query_file = FileStore('../outputs/python_output_query_file.csv', ["Account", "Rule_Name", "Record_Count"])
         query_result = Command.execute("force query " + sql_statement)
-        dict_list = [{'Account': account, 'Rule_Name': sql_statement, 'Record_Count': Command.parse_query_result(query_result)}]
-        python_output_query_file.write_csv(dict_list)
-        return Command.execute("force query " + sql_statement)
+        query_result_as_str = str(query_result)
+        query_result_parsed = Command.parse_query_result(query_result_as_str)
+        rule_name = Utility.generate_rule_name(sql_statement)
+        Email.catch_failed_test(query_result_parsed, account, rule_name)
+        dict_list = {'Account': account, 'Rule_Name': rule_name, 'Record_Count': query_result_parsed}
+        return Command.output_query_results(dict_list)
 
-
-
+    @staticmethod
+    def output_query_results(input):
+        output_location = '../outputs/python_output_query_file.csv'
+        output_headers = ["Account", "Rule_Name", "Record_Count"]
+        python_output_query_file = FileStore(output_location, output_headers)
+        python_output_query_file.write_csv(input)
 
 
 class FileStore:
@@ -176,13 +187,11 @@ class FileStore:
                                     lineterminator='\n')
             return writer.writeheader()
 
-
     def write(self, text):
-        "Writes a single line to specified filename. Can refer to preexisting FileStore files."
+        """Writes a single line to specified filename. Can refer to preexisting FileStore files."""
         with open(self.filename, 'w', newline=' ') as csvfile:
             log_file = csv.writer(csvfile, delimiter=',', quoting=csv.QUOTE_ALL)
             log_file.writerow(text)
-
 
     def write_csv(self, fields):
         """Will write to a csv file """
@@ -192,11 +201,9 @@ class FileStore:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL, lineterminator='\n')
             return writer.writerow(fields)
 
-    def read_queries(self, file_path, account):
+    def read_queries(self, account):
         """Will execute n amount of SOQL statements based on parsed query file."""
-        query_log = FileStore(file_path, ["query"])
-        query_list = {}
-        with open(query_log.filename, 'r') as file:
+        with open(self.filename, 'r') as file:
             query_list = csv.DictReader(file, delimiter=',')
             return [Command.run_query(query['query'], account) for query in query_list]
 
@@ -204,37 +211,32 @@ class FileStore:
 class TestRunner:
 
     def __init__(self, account_input_file, query_input_file):
-        self.account_input_file = account_input_file
-        self.query_input_file = query_input_file
         self.account_file = FileStore(account_input_file[0], account_input_file[1])
         self.query_file = FileStore(query_input_file[0], query_input_file[1])
         self.start_time = time.time()
 
     def execute_queries_on_accounts(self):
-        with open(self.account_input_file, 'r') as accounts_file:
-            account_list = csv.DictReader(accounts_file, delimiter=',')
+        with open(self.account_file.get_file_location(), 'r') as file_lock:
+            account_list = csv.DictReader(file_lock, delimiter=',')
             for account in account_list:
                 Command.login(account['username'], account['pw'])
-                FileStore.read_queries(self.query_input_file, account['username'])
+                self.query_file.read_queries(account['username'])
 
 
 def main():
-    #print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
+    # print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
     account_file = "../outputs/accounts.csv", ["username", "pw"]
     query_file = "../inputs/queries.csv", ["query"]
     active_tests = TestRunner(account_file, query_file)
-    print(active_tests.account_file.get_file_location())
-    return active_tests.execute_queries_on_accounts
+    print(active_tests.execute_queries_on_accounts())
 
     # if user_input_is_valid(argv):
     #     start_time = time.time()
     #     print(True)
     #     #main()
-        #print("--- %s seconds elapsed ---" % (time.time() - start_time))
-
-
+    # print("--- %s seconds elapsed ---" % (time.time() - start_time))
     # send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
-    #send_failed_test_email()
+    # send_failed_test_email()
     # Command.run_query("SELECT COUNT(SFDCID__C) Active FROM Contact", "test_account")
     # print(Command.parse_query_result(" Active -------- 20     (1 records)"))
 
