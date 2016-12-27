@@ -28,9 +28,10 @@ import os
 import time
 import csv
 import subprocess
-from sys import argv
+import sys
 import re
 import colorama
+import sqlite3
 
 
 class Utility:
@@ -221,29 +222,39 @@ class TestRunner:
                 self.query_file.read_queries(account['username'])
 
 
+class Database:
+
+    def __init__(self, name):
+        self.location = '../db/'
+        self.filename = name + '.db'
+        self.database_path = self.location + self.filename
+        self.database_connection = sqlite3.connect(self.database_path)
+
+    def open_cursor(self, sql_statement):
+        cursor = self.database_connection.cursor()
+        try:
+            cursor.execute(sql_statement)
+            self.database_connection.commit()
+        except Exception:
+            self.database_connection.rollback()
+            self.database_connection.close()
+
+    
+
 def main():
+    queries_database = Database("queries_database")
+    #queries_database.insert({'type': 'apple', 'count': 7})
+    #print(queries_database.all())
     # print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
-    if Utility.user_input_is_valid(argv):
-        account_file = "../outputs/accounts.csv", ["username", "pw"]
-        account_file =
-        query_file = "../inputs/queries.csv", ["query"]
-        active_tests = TestRunner(account_file, query_file)
-        print(active_tests.execute_queries_on_accounts())
-    exit()
-
-    # if user_input_is_valid(argv):
+    # if Utility.user_input_is_valid(argv):
     #     start_time = time.time()
-    #     print(True)
-    #     #main()
+    #     account_file = "../outputs/accounts.csv", ["username", "pw"]
+    #     account_file =
+    #     query_file = "../inputs/queries.csv", ["query"]
+    #     active_tests = TestRunner(account_file, query_file)
+    #     print(active_tests.execute_queries_on_accounts())
     # print("--- %s seconds elapsed ---" % (time.time() - start_time))
-    # send_email(read_credentials('gmail', 'username'), 'eumlwmfbrbnqveea','dstrasel@preventure.com','Test Email','Test Body')
-    # send_failed_test_email()
-    # Command.run_query("SELECT COUNT(SFDCID__C) Active FROM Contact", "test_account")
-    # print(Command.parse_query_result(" Active -------- 20     (1 records)"))
-
-    # If no args are specified, print "Nothing specified" and return pass
-    # If args specified, pass them into "run_tests", arg[0] should be account path and arg[1] should be test path,
-    # while arg[2] can flag whether emails should be sent. Default False, unless explicitly passed.
+    # exit()
 
 if __name__ == "__main__":
     main()
