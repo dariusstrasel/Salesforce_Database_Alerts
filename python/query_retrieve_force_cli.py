@@ -32,6 +32,7 @@ import sys
 import re
 import colorama
 import sqlite3
+import datetime
 
 
 class Utility:
@@ -50,9 +51,9 @@ class Utility:
     @staticmethod
     def user_input_is_valid(arg_cls):
         if len(arg_cls) < 3:
-            print("Not enough parameters passed. Need %s more" % (3 - len(argv)))
+            print("Not enough parameters passed. Need %s more" % (3 - len(sys.argv)))
             return False
-        print([Utility.path_exist(argument) for argument in argv[1:]])
+        print([Utility.path_exist(argument) for argument in sys.argv[1:]])
 
         print("'%s' and '%s' are not files/do not exist." % (arg_cls[1], arg_cls[2]))
         return False
@@ -117,8 +118,8 @@ class Email:
             # Email.send_email(user, pwd, recipient, subject, body)
 
 
-class Command:
-    """This class file serves as a force-cli wrapper library for Python. This will execute each Command using the
+class SFDCSession:
+    """This class file serves as a force-cli wrapper library for Python. This will execute each SFDCSession using the
     subprocess Python module."""
     def __init__(self):
         pass
@@ -137,7 +138,7 @@ class Command:
     @staticmethod
     def login(username, password):
         """Used to pass a login to force-cli using username, password arguments."""
-        return Command.execute("force login -u=%s -p=%s" % (username, password))
+        return SFDCSession.execute("force login -u=%s -p=%s" % (username, password))
 
     @staticmethod
     def parse_query_result(query):
@@ -150,24 +151,32 @@ class Command:
     @staticmethod
     def run_query(sql_statement, account):
         """Will execute a single SOQL statement."""
-        query_result = Command.execute("force query " + sql_statement)
+        query_date = datetime.datetime.today().strftime('%m-%d-%Y')
+        query_result = SFDCSession.execute("force query " + sql_statement)
         query_result_as_str = str(query_result)
-        query_result_parsed = Command.parse_query_result(query_result_as_str)
+        query_result_parsed = SFDCSession.parse_query_result(query_result_as_str)
         rule_name = Utility.generate_rule_name(sql_statement)
-        Email.catch_failed_test(query_result_parsed, account, rule_name)
+        # Doesn't reflect new database method
+        # Email.catch_failed_test(query_result_parsed, account, rule_name)
         dict_list = {'Account': account, 'Rule_Name': rule_name, 'Record_Count': query_result_parsed}
-        return Command.output_query_results(dict_list)
+        query_data = [(sql_statement, str(query_date), query_result_parsed, account)]
+        SFDCSession.output_query_results_database(query_data)
+        SFDCSession.output_query_results_to_file(dict_list)
 
     @staticmethod
-    def output_query_results(input):
+    def output_query_results_to_file(input):
         output_location = '../outputs/python_output_query_file.csv'
         output_headers = ["Account", "Rule_Name", "Record_Count"]
         python_output_query_file = FileStore(output_location, output_headers)
-        python_output_query_file.write_csv(input)
+        return python_output_query_file.write_csv(input)
+
+    @staticmethod
+    def output_query_results_database(input):
+        database_connection = Database("queries_database", "../db/")
+        return database_connection.insert_query_result(input)
 
 
 class FileStore:
-
 
     def __init__(self, filename, fields):
         """This uses a passed in 'filename' argument to create a FileStore file with the same name."""
@@ -186,12 +195,6 @@ class FileStore:
                                     lineterminator='\n')
             return writer.writeheader()
 
-    def write(self, text):
-        """Writes a single line to specified filename. Can refer to preexisting FileStore files."""
-        with open(self.filename, 'w', newline=' ') as csvfile:
-            log_file = csv.writer(csvfile, delimiter=',', quoting=csv.QUOTE_ALL)
-            log_file.writerow(text)
-
     def write_csv(self, fields):
         """Will write to a csv file """
         print("def write_csv(%s)" % fields)
@@ -200,11 +203,11 @@ class FileStore:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL, lineterminator='\n')
             return writer.writerow(fields)
 
-    def read_queries(self, account):
+    def read_queries_from_file(self, account):
         """Will execute n amount of SOQL statements based on parsed query file."""
         with open(self.filename, 'r') as file:
             query_list = csv.DictReader(file, delimiter=',')
-            return [Command.run_query(query['query'], account) for query in query_list]
+            return [SFDCSession.run_query(query['query'], account) for query in query_list]
 
 
 class TestRunner:
@@ -218,43 +221,102 @@ class TestRunner:
         with open(self.account_file.get_file_location(), 'r') as file_lock:
             account_list = csv.DictReader(file_lock, delimiter=',')
             for account in account_list:
-                Command.login(account['username'], account['pw'])
-                self.query_file.read_queries(account['username'])
+                SFDCSession.login(account['username'], account['pw'])
+                self.query_file.read_queries_from_file(account['username'])
 
 
 class Database:
 
-    def __init__(self, name):
-        self.location = '../db/'
+    def __init__(self, name, location):
+        self.location = location
         self.filename = name + '.db'
         self.database_path = self.location + self.filename
-        self.database_connection = sqlite3.connect(self.database_path)
+        if os.path.isfile(self.database_path) == False:
+            print("Database '%s' does not exist. Creating at: '%s'" % (self.filename, self.database_path))
+            self.database_connection = sqlite3.connect(self.database_path)
+            self.init_database()
+        else:
+            self.database_connection = sqlite3.connect(self.database_path)
+
+    def init_database(self):
+        print("Initialising database with default schema.")
+        query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime text, record_count integer, account text)"""
+        self.execute_cursor(query_table_sql_statement)
+        ruleset_table_sql_statement = """CREATE TABLE rulesets (ruleset_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, threshold_of_variance real)"""
+        self.execute_cursor(ruleset_table_sql_statement)
 
     def open_cursor(self, sql_statement):
         cursor = self.database_connection.cursor()
+        return cursor.execute(sql_statement)
+
+    def execute_cursor(self, sql_statement):
+        cursor = self.database_connection.cursor()
         try:
             cursor.execute(sql_statement)
-            self.database_connection.commit()
+            return self.database_connection.commit()
         except Exception:
             self.database_connection.rollback()
-            self.database_connection.close()
+            e = sys.exc_info()[0]
+            print("\nException found; rolling back commit.")
+            print("SQL Statement: '%s'" % (sql_statement))
+            print("\nException: " + str(sys.exc_info()))
+            return self.database_connection.close()
 
-    
+    # The following functions are stubs.
+
+    def insert_data(self, table, fields):
+        sql_injection = table + fields
+        return self.execute_cursor(sql_injection)
+        pass
+
+    def select_data(self, table, fields):
+        sql_statement = ""
+        self.open_cursor(sql_statement)
+        sql_injection = table + fields
+        return self.execute_cursor(sql_injection)
+        pass
+
+    def insert_query_result(self, query_data):
+        # OperationalError = Insert doesn't match table schema
+        # OperationalError = Database may be locked
+        # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
+        for record in query_data:
+            format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
+            self.execute_cursor(sql_command)
+            print("Executing: %s" % (sql_command))
+
+    def insert_ruleset(self, rule_type, sql_statement, target_record_count, duration, threshold_of_variance):
+        table = "rulesets"
+        fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
+        return self.insert_data(table, fields)
+        pass
+
+    def select_query_results(self, table, fields):
+        table = "queries"
+        fields = ["sql_statement", "datetime", "record_count", "account"]
+        return self.select_data(table, fields)
+        pass
+
+    def select_rulesets(self, table, fields):
+        table = "rulesets"
+        fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
+        return self.select_data(table, fields)
+        pass7
 
 def main():
-    queries_database = Database("queries_database")
-    #queries_database.insert({'type': 'apple', 'count': 7})
-    #print(queries_database.all())
+    # queries_database = Database("queries_database", "../db/")
+    # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account", "error")]
+    # queries_database.insert_query_result(query_data)
     # print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
-    # if Utility.user_input_is_valid(argv):
-    #     start_time = time.time()
-    #     account_file = "../outputs/accounts.csv", ["username", "pw"]
-    #     account_file =
-    #     query_file = "../inputs/queries.csv", ["query"]
-    #     active_tests = TestRunner(account_file, query_file)
-    #     print(active_tests.execute_queries_on_accounts())
-    # print("--- %s seconds elapsed ---" % (time.time() - start_time))
-    # exit()
+    if True:
+        start_time = time.time()
+        account_file = "../outputs/accounts.csv", ["username", "pw"]
+        query_file = "../inputs/queries.csv", ["query"]
+        active_tests = TestRunner(account_file, query_file)
+        print(active_tests.execute_queries_on_accounts())
+    print("--- %s seconds elapsed ---" % (time.time() - start_time))
+    exit()
 
 if __name__ == "__main__":
     main()
