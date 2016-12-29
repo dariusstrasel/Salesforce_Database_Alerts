@@ -33,6 +33,7 @@ import re
 import colorama
 import sqlite3
 import datetime
+import statistics
 
 
 class Utility:
@@ -224,6 +225,98 @@ class TestRunner:
                 SFDCSession.login(account['username'], account['pw'])
                 self.query_file.read_queries_from_file(account['username'])
 
+    def catch_error(self):
+        """Directs query results to rule processor."""
+        pass
+
+    @staticmethod
+    def rule_set_is_valid(rule_set):
+        """Returns whether a rule_set has a legal schema. True/False"""
+        # TODO: Add rule to ensure query has a record count?
+        rule_definitions = {
+            'valid_types': ['scalar', 'vector']
+            ,'valid_data_structure_length': '6'
+            ,'sql_statement_is_required': 'True'
+            ,'valid_duration': ['daily', 'weekly', 'monthly']
+        }
+        total_rules = len(rule_definitions)
+        rules_passed = 0
+        if rule_set['rule_set_type'] in rule_definitions['valid_types']:
+            rules_passed += 1
+        else:
+            print("%s not in %s" % (rule_set['rule_set_type'], rule_definitions['valid_types']))
+        if len(rule_set) == int(rule_definitions['valid_data_structure_length']):
+            rules_passed += 1
+        else:
+            print("rule_set did not have legal parameter count.")
+        if rule_set['sql_statement'] is not None or rule_set['sql_statement'] == "":
+            rules_passed += 1
+        else:
+            print("rule_set_type is null or empty")
+        if rule_set['duration'] in rule_definitions['valid_duration']:
+            rules_passed += 1
+        else:
+            print("Duration value is not legal.")
+        if total_rules == rules_passed:
+            return True
+        print("Rule Set is not valid. Passed %s of %s tests." % (rules_passed, total_rules))
+        return False
+
+    @staticmethod
+    def query_rule_match(query, rule_set):
+        """Returns true or false if a rule applies to a query result. """
+        if TestRunner.rule_set_is_valid(rule_set):
+            if rule_set['sql_statement'] == query['sql_statement'] and rule_set['account'] == query['account']:
+                return True
+            if rule_set['sql_statement'] == query['sql_statement']:
+                return True
+            print("SQL Statements do not match.")
+            return False
+        print("Rule is not legal.")
+        return False
+
+    def query_passes_tests(query, rule_set):
+        print("query: " + str(query))
+        print("rule_set: " + str(rule_set))
+        """This will compare each query result to rule_sets."""
+        DURATION_KEY = {'daily': '1', 'weekly':'7', 'monthly': '30'} #days
+        if TestRunner.query_rule_match(query, rule_set):
+            if rule_set['rule_set_type'] == 'scalar':
+                if rule_set['target_record_count'] == query['record_count']:
+                    print("Is Scalar Rule")
+                    print("True")
+                    return True #Record count met the target for scalar rule
+                print("Target record count does not match.")
+                return False
+            elif rule_set['rule_set_type'] == 'vector':
+                print("Is Vector Rule")
+                """
+                Need to select all queries from the database that fall within time-range of query.
+                """
+                query_history_results = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-28', 'account': 'test_account'}
+                TestRunner.calculate_variance(query_history_results)
+                if rule_set['sql_statement'] == query['sql_statement']:
+                    """
+                    Now need to determine the duration and get the correct data from the database.
+                    if duration == daily, compare all results from the last day and calculate variance
+                    if duration == weekly, query all results from the last week and calculate variance
+                    if duration == monthly, query all results from the last month and calculate variance
+                    """
+                    if rule_set['duration'] == 'daily':
+                        query_history = """Select * from queries where date == (query.date - duration[rule_set.duration])"""
+                        query_history.variance == """calculate_variance([query.record_count])"""
+                        if query_history['variance'] <= rule_set['variance']:
+                            return True
+                        return False
+
+    @staticmethod
+    def calculate_variance(data):
+        """Returns the variance of a population as input."""
+        return statistics.variance(data)
+
+    def get_threshold(self, record_count_a, record_count_b):
+        threshold = record_count_a / record_count_b * 10
+
 
 class Database:
 
@@ -242,8 +335,8 @@ class Database:
         print("Initialising database with default schema.")
         query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime text, record_count integer, account text)"""
         self.execute_cursor(query_table_sql_statement)
-        ruleset_table_sql_statement = """CREATE TABLE rulesets (ruleset_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, threshold_of_variance real)"""
-        self.execute_cursor(ruleset_table_sql_statement)
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, threshold_of_variance real)"""
+        self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
         cursor = self.database_connection.cursor()
@@ -283,11 +376,16 @@ class Database:
         for record in query_data:
             format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
             sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
-            self.execute_cursor(sql_command)
-            print("Executing: %s" % (sql_command))
+            try:
+                self.execute_cursor(sql_command)
+                print("Executing: %s" % (sql_command))
+            except sqlite3.OperationalError:
+                self.database_connection.rollback()
+                print("Database is locked or insert does not match table schema.")
+                exit()
 
-    def insert_ruleset(self, rule_type, sql_statement, target_record_count, duration, threshold_of_variance):
-        table = "rulesets"
+    def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, threshold_of_variance):
+        table = "rule_sets"
         fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
         return self.insert_data(table, fields)
         pass
@@ -298,11 +396,11 @@ class Database:
         return self.select_data(table, fields)
         pass
 
-    def select_rulesets(self, table, fields):
-        table = "rulesets"
+    def select_rule_sets(self, table, fields):
+        table = "rule_sets"
         fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
         return self.select_data(table, fields)
-        pass7
+        pass
 
 def main():
     # queries_database = Database("queries_database", "../db/")
@@ -313,8 +411,11 @@ def main():
         start_time = time.time()
         account_file = "../outputs/accounts.csv", ["username", "pw"]
         query_file = "../inputs/queries.csv", ["query"]
+        query = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "", 'execution_date':'2016-12-29', 'account': 'test_account'}
+        rule_set = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0", 'duration':'daily', "threshold":"", 'account':''}
+        TestRunner.query_rule_match(query, rule_set)
         active_tests = TestRunner(account_file, query_file)
-        print(active_tests.execute_queries_on_accounts())
+        # print(active_tests.execute_queries_on_accounts())
     print("--- %s seconds elapsed ---" % (time.time() - start_time))
     exit()
 
