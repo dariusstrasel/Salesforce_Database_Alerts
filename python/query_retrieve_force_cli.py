@@ -332,7 +332,7 @@ class Database:
         print("Initialising database with default schema.")
         query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime text, record_count integer, account text)"""
         self.execute_cursor(query_table_sql_statement)
-        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, threshold_of_variance real)"""
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, variance real, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance) ON CONFLICT IGNORE)"""
         self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
@@ -361,7 +361,8 @@ class Database:
         return self.execute_cursor(sql_injection)
         pass
 
-    def insert_query_result(self, query_data, sql_statement, execution_date, record_count, account):
+    def insert_query_result(self, sql_statement, execution_date, record_count, account):
+        """Executes a cursor commit to the query database by inserting a single record based on input parameters."""
         # OperationalError = Insert doesn't match table schema
         # OperationalError = Database may be locked
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
@@ -377,19 +378,15 @@ class Database:
                 print("Database is locked or insert does not match table schema.")
                 exit()
 
-    def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, threshold_of_variance):
-        table = "rule_sets"
-        fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
-        return self.insert_data(table, fields)
-        pass
 
-    def insert_rule_set_test(self, query_data):
+    def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance):
         # OperationalError = Insert doesn't match table schema
         # OperationalError = Database may be locked
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
-        for record in query_data:
-            format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
-            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
+        rule_data = [(rule_type, sql_statement, target_record_count, duration, variance)]
+        for record in rule_data:
+            format_str = """INSERT INTO rule_sets (rule_type, sql_statement, target_record_count, duration, variance) VALUES ("{rule_type}", "{sql_statement}", "{target_record_count}", "{duration}", "{variance}");"""
+            sql_command = format_str.format(rule_type=record[0], sql_statement=record[1], target_record_count=record[2], duration=record[3], variance=record[4])
             try:
                 self.execute_cursor(sql_command)
                 print("Executing: %s" % (sql_command))
