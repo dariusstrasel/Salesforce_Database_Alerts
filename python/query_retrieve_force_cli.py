@@ -314,9 +314,6 @@ class TestRunner:
         """Returns the variance of a population as input."""
         return statistics.variance(data)
 
-    def get_threshold(self, record_count_a, record_count_b):
-        threshold = record_count_a / record_count_b * 10
-
 
 class Database:
 
