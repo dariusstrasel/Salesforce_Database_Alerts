@@ -354,11 +354,6 @@ class Database:
 
     # The following functions are stubs.
 
-    def insert_data(self, table, fields):
-        sql_injection = table + fields
-        return self.execute_cursor(sql_injection)
-        pass
-
     def select_data(self, table, fields):
         sql_statement = ""
         self.open_cursor(sql_statement)
@@ -366,10 +361,11 @@ class Database:
         return self.execute_cursor(sql_injection)
         pass
 
-    def insert_query_result(self, query_data):
+    def insert_query_result(self, query_data, sql_statement, execution_date, record_count, account):
         # OperationalError = Insert doesn't match table schema
         # OperationalError = Database may be locked
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
+        query_data = [(sql_statement, execution_date, record_count, account)]
         for record in query_data:
             format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
             sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
@@ -386,6 +382,21 @@ class Database:
         fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
         return self.insert_data(table, fields)
         pass
+
+    def insert_rule_set_test(self, query_data):
+        # OperationalError = Insert doesn't match table schema
+        # OperationalError = Database may be locked
+        # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
+        for record in query_data:
+            format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
+            try:
+                self.execute_cursor(sql_command)
+                print("Executing: %s" % (sql_command))
+            except sqlite3.OperationalError:
+                self.database_connection.rollback()
+                print("Database is locked or insert does not match table schema.")
+                exit()
 
     def select_query_results(self, table, fields):
         table = "queries"
