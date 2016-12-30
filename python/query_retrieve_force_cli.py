@@ -368,7 +368,7 @@ class Database:
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
         query_data = [(sql_statement, execution_date, record_count, account)]
         for record in query_data:
-            format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            format_str = """INSERT INTO 'queries' (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
             sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
             try:
                 self.execute_cursor(sql_command)
@@ -377,6 +377,25 @@ class Database:
                 self.database_connection.rollback()
                 print("Database is locked or insert does not match table schema.")
                 exit()
+
+
+    def select_query_history(self, execution_date, record_count, account, rule_set_duration):
+        """Selects all query history where a specified (input) duration is removed from an input datetime."""
+        # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
+        # TODO: Finish execution_date  - rule_set_duration calculation.
+        sql_statement = """SELECT * FROM 'queries' WHERE datetime BETWEEN ("{start_date}" AND "{execution_date}")"""
+        start_date = execution_date - rule_set_duration
+        query_data = [(sql_statement, execution_date, record_count, account)]
+        for record in query_data:
+            format_str = """INSERT INTO queries (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
+            try:
+                self.execute_cursor(sql_command)
+                print("Executing: %s" % (sql_command))
+            except sqlite3.OperationalError:
+                self.database_connection.rollback()
+                print("Database is locked or insert does not match table schema.")
+
 
 
     def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance):
@@ -421,7 +440,7 @@ def main():
         TestRunner.query_rule_match(query, rule_set)
         active_tests = TestRunner(account_file, query_file)
         # print(active_tests.execute_queries_on_accounts())
-    print("--- %s seconds elapsed ---" % (time.time() - start_time))
+        print("--- %s seconds elapsed ---" % (time.time() - start_time))
     exit()
 
 if __name__ == "__main__":
