@@ -2,6 +2,7 @@
     Author: Darius Strasel
     Objective:
     Run test cases on accounts within Maxwell and email specified people if they fail.
+
     Workflow:
     1. Import './test_output.txt'
     2. Create table for holding Account, RuleName, and the RecordCount as result of the test
@@ -11,17 +12,58 @@
     5. Create output file for test results
     6. Import './accounts.csv' # Used to login using the account's admin user
     7. Create test list
-    8. Run test equeries for the accounts imported from file.
+    8. Run test queries for the accounts imported from file.
     9. Save queries to output file
     ########### START EMAILING RESULTS ###############
     10. Send email for each failed row in results.
 
-    TODO:
-    -Rewrite log CSVwriter
-    -Add try statement to check if force-cli is installed
-    -Refactor query runner (ensure single responsibility principal)
-    -Add sys.argv to allow CLI level script execution
-    -Add CLI input validators (check for 2 parameters, both are paths.)
+    Module Structure (12/31/2016):
+        Classes:
+            Utility (Static methods for rest fo module):
+                -is_path()
+                -return_now_as_datetime()
+                -date_delta()
+                -path_exist()
+                -user_input_is_valid()
+                -generate_rule_name()
+            Email (Simple class to facilitate email):
+                send_email()
+                catch_failed_test() (OBSOLETE)
+            SFDCSession (Represents session with Salesforce API):
+                -__init__()
+                -execute()
+                -login()
+                -parse_query_result()
+                -run_query() (OBSOLETE)
+                -output_query_results_to_file()
+                -output_query_results_database()
+            FileStore (Represents CSV filestores and logs; handles IO)
+                -__init__(filename, headers)
+                -get_file_location()
+                -init_csv()
+                -write_csv()
+                -read_queries_from_file()
+            TestRunner (Represents active test session; parent of all functionality.):
+                -__init__(account_file, query_file, database_connection)
+                -execute_queries_on_accounts()
+                -catch_error() (OBSOLETE)
+                -rule_set_is_valid()
+                -query_rule_match()
+                -query_passes_tests()
+                -calculate_variance()
+                -calculate_stdev()
+            Database (Represents database IO, handles cursor sessions, and CRUD operations.):
+                -__init__(name, location)
+                -init_database()
+                -open_cursor()
+                -execute_cursor()
+                -select_data() (OBSOLETE)
+                -insert_query_result()
+                -select_query_history()
+                -insert_rule_set()
+                -select_query_results() (OBSOLETE)
+                -select_rule_sets()
+
 '''
 
 import os
@@ -41,7 +83,8 @@ class Utility:
 
     @staticmethod
     def is_path(input_string):
-        """Returns whether an input string has a pattern match in the regex expression. This particular pattern looks to see if a string matches a typical file-system path."""
+        """Returns whether an input string has a pattern match in the regex expression. This particular pattern looks
+        to see if a string matches a typical file-system path."""
         regex = r"(.+)/([^/]+)$"
         if len(re.findall(regex, input_string)) == 0:
             return False
@@ -59,8 +102,6 @@ class Utility:
 
         delta_date = datetime_string_as_object - datetime.timedelta(days=int(duration_mapping[duration_string]))
         return delta_date
-
-
 
     @staticmethod
     def path_exist(file_path):
@@ -96,7 +137,7 @@ class Email:
     @staticmethod
     def send_email(self, user, pwd, recipient, subject, body):
         # Sends an email using passed in arguments, catches errors in try/except
-        print("send_email(%s, %s, %s, %,s %s)" % user, pwd, recipient, subject, body)
+        print("send_email(%s, %s, %s, %,s %s)" % (user, pwd, recipient, subject, body))
         print(">>>send_email: " + "To: " + recipient + " From: " + user)
         import smtplib
 
@@ -219,7 +260,8 @@ class FileStore:
         print("def write_csv(%s)" % fields)
         with open(self.filename, 'a') as csvfile:
             fieldnames = self.headers
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL, lineterminator='\n')
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=',', quoting=csv.QUOTE_ALL,
+                                    lineterminator='\n')
             return writer.writerow(fields)
 
     def read_queries_from_file(self, account):
@@ -308,7 +350,11 @@ class TestRunner:
                 return False
             elif rule_set['rule_set_type'] == 'vector':
                 if rule_set['sql_statement'] == query['sql_statement']:
-                    query_history_results = self.database_connection.select_query_history(query['sql_statement'],query['execution_date'], query['record_count'], query['account'], rule_set['duration'])
+                    query_history_results = self.database_connection.select_query_history(query['sql_statement'],
+                                                                                          query['execution_date'],
+                                                                                          query['record_count'],
+                                                                                          query['account'],
+                                                                                          rule_set['duration'])
                     print(query_history_results)
                     query_history = [item[2] for item in query_history_results]
                     print(query_history)
@@ -329,7 +375,6 @@ class TestRunner:
         return statistics.stdev(data)
 
 
-
 class Database:
 
     def __init__(self, name, location):
@@ -345,9 +390,14 @@ class Database:
 
     def init_database(self):
         print("Initialising database with default schema.")
-        query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime text, record_count integer, account text)"""
+        query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime
+                                                             text, record_count integer, account text)"""
         self.execute_cursor(query_table_sql_statement)
-        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text, sql_statement text, target_record_count integer, duration text, variance real, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance) ON CONFLICT IGNORE)"""
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text,
+                                                                  sql_statement text, target_record_count integer,
+                                                                  duration text, variance real, UNIQUE (rule_type,
+                                                                  sql_statement, target_record_count, duration, variance
+                                                                  ) ON CONFLICT IGNORE)"""
         self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
@@ -384,8 +434,10 @@ class Database:
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
         query_data = [(sql_statement, execution_date, record_count, account)]
         for record in query_data:
-            format_str = """INSERT INTO 'queries' (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
-            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2], account=record[3])
+            format_str = """INSERT INTO 'queries' (sql_statement, datetime, record_count, account) VALUES (
+                                                    "{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2],
+                                            account=record[3])
             try:
                 self.execute_cursor(sql_command)
                 print("Executing: %s" % (sql_command))
@@ -394,7 +446,6 @@ class Database:
                 print("Database is locked or insert does not match table schema.")
                 exit()
 
-
     def select_query_history(self, sql_statement, execution_date, record_count, account, rule_set_duration):
         """Selects all query history where a specified (input) duration is removed from an input datetime."""
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
@@ -402,8 +453,10 @@ class Database:
         start_date = Utility.date_delta(execution_date, rule_set_duration)
         query_data = [(sql_statement, execution_date, record_count, account)]
         for record in query_data:
-            format_str = """SELECT sql_statement, datetime, record_count, account FROM 'queries' WHERE datetime BETWEEN "{start_date}" AND "{datetime}" """
-            sql_command = format_str.format(start_date=start_date, datetime=record[1], record_count=record[2], account=record[3])
+            format_str = """SELECT sql_statement, datetime, record_count, account FROM 'queries' WHERE datetime
+                            BETWEEN "{start_date}" AND "{datetime}" """
+            sql_command = format_str.format(start_date=start_date, datetime=record[1], record_count=record[2],
+                                            account=record[3])
             try:
                 print("Executing: %s" % (sql_command))
                 return self.open_cursor(sql_command)
@@ -412,16 +465,17 @@ class Database:
                 self.database_connection.rollback()
                 print("Database is locked or insert does not match table schema.")
 
-
-
     def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance):
         # OperationalError = Insert doesn't match table schema
         # OperationalError = Database may be locked
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
         rule_data = [(rule_type, sql_statement, target_record_count, duration, variance)]
         for record in rule_data:
-            format_str = """INSERT INTO rule_sets (rule_type, sql_statement, target_record_count, duration, variance) VALUES ("{rule_type}", "{sql_statement}", "{target_record_count}", "{duration}", "{variance}");"""
-            sql_command = format_str.format(rule_type=record[0], sql_statement=record[1], target_record_count=record[2], duration=record[3], variance=record[4])
+            format_str = """INSERT INTO rule_sets (rule_type, sql_statement, target_record_count, duration, variance)
+                    VALUES ("{rule_type}", "{sql_statement}", "{target_record_count}", "{duration}", "{variance}");"""
+
+            sql_command = format_str.format(rule_type=record[0], sql_statement=record[1], target_record_count=record[2],
+                                            duration=record[3], variance=record[4])
             try:
                 self.execute_cursor(sql_command)
                 print("Executing: %s" % (sql_command))
@@ -449,13 +503,16 @@ def main():
         account_file = ("../outputs/accounts.csv", ["username", "pw"])
         query_file = ("../inputs/queries.csv", ["query"])
         database_store = ("queries_database", "../db/")
-        query = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-29 00:00:00', 'account': 'Test Account'}
-        rule_set = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0", 'duration':'weekly', "threshold":"", 'account':''}
+        query = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-29 00:00:00',
+                 'account': 'Test Account'}
+        rule_set = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0",
+                    'duration':'weekly', "threshold":"", 'account':''}
         #test_session.query_rule_match(query, rule_set)
         test_session = TestRunner(account_file, query_file,database_store[0], database_store[1])
         # print(active_tests.execute_queries_on_accounts())
         print(test_session.query_passes_tests(query, rule_set))
-        #print(queries_database.select_query_history("SELECT * FROM CONTACTS", "2016-12-28 23:50:04", "1000", "Test Account", "weekly"))
+        #print(queries_database.select_query_history("SELECT * FROM CONTACTS", "2016-12-28 23:50:04", "1000",
+        # "Test Account", "weekly"))
         print("--- %s seconds elapsed ---" % (time.time() - start_time))
     exit()
 
