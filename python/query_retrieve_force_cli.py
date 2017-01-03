@@ -336,7 +336,6 @@ class TestRunner:
         print("Rule is not legal.")
         return False
 
-
     def query_passes_tests(self, query, rule_set):
         """This will compare each query result to rule_sets."""
         print("query: " + str(query))
@@ -350,19 +349,15 @@ class TestRunner:
                 return False
             elif rule_set['rule_set_type'] == 'vector':
                 if rule_set['sql_statement'] == query['sql_statement']:
-                    query_history_results = self.database_connection.select_query_history(query['sql_statement'],
-                                                                                          query['execution_date'],
-                                                                                          query['record_count'],
-                                                                                          query['account'],
-                                                                                          rule_set['duration'])
+                    query_history_results = self.database_connection.select_query_history(query['sql_statement'], query['execution_date'], query['record_count'], query['account'], rule_set['duration'])
                     print(query_history_results)
                     query_history = [item[2] for item in query_history_results]
                     print(query_history)
                     query_history_stdev = self.calculate_stdev(query_history)
                     print(query_history_stdev)
-                    # if query_history_variance <= rule_set['variance']:
-                    #     return True
-                    # return False
+                    if query_history_stdev <= int(rule_set['threshold']):
+                        return True
+                    return False
 
     @staticmethod
     def calculate_variance(data):
@@ -390,17 +385,13 @@ class Database:
 
     def init_database(self):
         print("Initialising database with default schema.")
-        query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement text, datetime
-                                                             text, record_count integer, account text)"""
+        query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement TEXT, datetime TEXT, record_count INTEGER, account TEXT)"""
         self.execute_cursor(query_table_sql_statement)
-        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type text,
-                                                                  sql_statement text, target_record_count integer,
-                                                                  duration text, variance real, UNIQUE (rule_type,
-                                                                  sql_statement, target_record_count, duration, variance
-                                                                  ) ON CONFLICT IGNORE)"""
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type TEXT, sql_statement TEXT, target_record_count INTEGER, duration TEXT, variance REAL, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance) ON CONFLICT IGNORE)"""
         self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
+        """Fetches all the results from input SQL statement, without committing."""
         cursor = self.database_connection.cursor()
         cursor.execute(sql_statement)
         return cursor.fetchall()
@@ -418,15 +409,6 @@ class Database:
             print("\nException: " + str(sys.exc_info()))
             return self.database_connection.close()
 
-    # The following functions are stubs.
-
-    def select_data(self, table, fields):
-        sql_statement = ""
-        self.open_cursor(sql_statement)
-        sql_injection = table + fields
-        return self.execute_cursor(sql_injection)
-        pass
-
     def insert_query_result(self, sql_statement, execution_date, record_count, account):
         """Executes a cursor commit to the query database by inserting a single record based on input parameters."""
         # OperationalError = Insert doesn't match table schema
@@ -434,10 +416,9 @@ class Database:
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
         query_data = [(sql_statement, execution_date, record_count, account)]
         for record in query_data:
-            format_str = """INSERT INTO 'queries' (sql_statement, datetime, record_count, account) VALUES (
-                                                    "{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
-            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2],
-                                            account=record[3])
+            format_str = """INSERT INTO 'queries' (sql_statement, datetime, record_count, account) VALUES ("{sql_statement}", "{datetime}", "{record_count}", "{account}");"""
+            sql_command = format_str.format(sql_statement=record[0], datetime=record[1], record_count=record[2],account=record[3])
+
             try:
                 self.execute_cursor(sql_command)
                 print("Executing: %s" % (sql_command))
@@ -506,7 +487,7 @@ def main():
         query = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-29 00:00:00',
                  'account': 'Test Account'}
         rule_set = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0",
-                    'duration':'weekly', "threshold":"", 'account':''}
+                    'duration':'weekly', "threshold":"0", 'account':''}
         #test_session.query_rule_match(query, rule_set)
         test_session = TestRunner(account_file, query_file,database_store[0], database_store[1])
         # print(active_tests.execute_queries_on_accounts())
