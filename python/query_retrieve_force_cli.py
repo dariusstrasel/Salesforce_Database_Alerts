@@ -64,6 +64,15 @@
                 -select_query_results() (OBSOLETE)
                 -select_rule_sets()
 
+Notes 1/4/17 Meeting:
+        proportion: percentage of change
+        difference: value of change
+
+      Scalar, 0 Target Record Count
+        SELECT COUNT(SFDCID__C) IsActive_Status_Not_Active FROM Contact where (mxw__Is_Active__c = true and Status__c != 'Active') OR (mxw__Is_Active__c = false and Status__c = 'Active')
+      Vector, Daily, Threshold: 5%, Proportion
+        SELECT COUNT(SFDCID__C) Active FROM Contact where mxw__Is_Active__c = true
+
 '''
 
 import os
@@ -264,16 +273,30 @@ class FileStore:
                                     lineterminator='\n')
             return writer.writerow(fields)
 
-    def read_queries_from_file(self, account):
+    def read_queries_from_file(self, account) -> list:
         """Will execute n amount of SOQL statements based on parsed query file."""
         with open(self.filename, 'r') as file:
             query_list = csv.DictReader(file, delimiter=',')
             return [SFDCSession.run_query(query['query'], account) for query in query_list]
 
+    def read_rulesets_from_file(self) -> list:
+        """Loads the lines from rule_set.csv into an associated database."""
+        """
+            What does this function do?
+            This will take the rule_sets.csv file and load it into the rule_set table of the database. What are the steps
+            involved?
+            1. Open .csv
+            2. Read each line into a dictionary, reading header:value pairs
+            3. Insert each line into the database table for rule_sets
+        """
+        with open(self.filename, 'r') as file:
+            rule_list = csv.DictReader(file, delimiter=',')
+            return [rule for rule in rule_list]
 
 class TestRunner:
 
     def __init__(self, account_input_file, query_input_file, database_name, database_location):
+        self.rule_set_file = FileStore(account_input_file[0], account_input_file[1])
         self.account_file = FileStore(account_input_file[0], account_input_file[1])
         self.query_file = FileStore(query_input_file[0], query_input_file[1])
         self.database_connection = Database(database_name, database_location)
@@ -288,6 +311,13 @@ class TestRunner:
 
     def catch_error(self):
         """Directs query results to rule processor."""
+        pass
+
+    @staticmethod
+    def execute_rule_suite(query):
+        # Select all rule_sets
+        # Execute test_session.query_passes_tests(query, rule_set)
+        # If any rules fail, send an email.
         pass
 
     @staticmethod
@@ -324,7 +354,7 @@ class TestRunner:
         return False
 
     @staticmethod
-    def query_rule_match(query, rule_set):
+    def query_rule_match(query, rule_set) -> bool:
         """Returns true or false if a rule applies to a query result. """
         if TestRunner.rule_set_is_valid(rule_set):
             if rule_set['sql_statement'] == query['sql_statement'] and rule_set['account'] == query['account']:
@@ -336,7 +366,7 @@ class TestRunner:
         print("Rule is not legal.")
         return False
 
-    def query_passes_tests(self, query, rule_set):
+    def query_passes_tests(self, query, rule_set) -> bool:
         """This will compare each query result to rule_sets."""
         print("query: " + str(query))
         print("rule_set: " + str(rule_set))
@@ -353,21 +383,49 @@ class TestRunner:
                     print(query_history_results)
                     query_history = [item[2] for item in query_history_results]
                     print(query_history)
-                    query_history_stdev = self.calculate_stdev(query_history)
+                    query_history_stdev = self.calculate_proportion(query_history)
                     print(query_history_stdev)
                     if query_history_stdev <= int(rule_set['threshold']):
                         return True
                     return False
+                print("Ruleset does not match query")
+        print("No matching rule found for query.")
+        return False
+
+    @staticmethod
+    def type_is_int(data) -> bool:
+        try:
+            [int(data) for data in data]
+            return True
+        except TypeError:
+            return False
+
+    @staticmethod
+    def calculate_proportion(data1, data2) -> int:
+        """Returns the variance of a population as input."""
+        if TestRunner.type_is_int([data1, data2]):
+            proportion = 100 * (data2 - data1) / data1
+            return proportion
+    # 1 2
+    # 1/100 = 2/
+    @staticmethod
+    def calculate_difference(data1, data2) -> int:
+        """Returns the variance of a population as input."""
+        if TestRunner.type_is_int([data1, data2]):
+            difference = data1 - data2
+            return difference
 
     @staticmethod
     def calculate_variance(data):
         """Returns the variance of a population as input."""
-        return statistics.variance(data)
+        if TestRunner.type_is_int(data):
+            return statistics.variance(data)
 
     @staticmethod
     def calculate_stdev(data):
         """Returns the variance of a population as input."""
-        return statistics.stdev(data)
+        if TestRunner.type_is_int(data):
+            return statistics.stdev(data)
 
 
 class Database:
@@ -387,7 +445,7 @@ class Database:
         print("Initialising database with default schema.")
         query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement TEXT, datetime TEXT, record_count INTEGER, account TEXT)"""
         self.execute_cursor(query_table_sql_statement)
-        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type TEXT, sql_statement TEXT, target_record_count INTEGER, duration TEXT, variance REAL, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance) ON CONFLICT IGNORE)"""
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type TEXT, sql_statement TEXT, target_record_count INTEGER, duration TEXT, variance REAL, math_type TEXT, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance, math_type) ON CONFLICT IGNORE)"""
         self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
@@ -404,10 +462,13 @@ class Database:
         except Exception:
             self.database_connection.rollback()
             e = sys.exc_info()[0]
+            print("--------------------------------")
             print("\nException found; rolling back commit.")
             print("SQL Statement: '%s'" % (sql_statement))
             print("\nException: " + str(sys.exc_info()))
-            return self.database_connection.close()
+            print("--------------------------------")
+            raise Exception
+            #return self.database_connection.close()
 
     def insert_query_result(self, sql_statement, execution_date, record_count, account):
         """Executes a cursor commit to the query database by inserting a single record based on input parameters."""
@@ -426,6 +487,29 @@ class Database:
                 self.database_connection.rollback()
                 print("Database is locked or insert does not match table schema.")
                 exit()
+
+    def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance, math_type):
+        # OperationalError = Insert doesn't match table schema
+        # OperationalError = Database may be locked
+        # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
+        rule_data = [(rule_type, sql_statement, target_record_count, duration, variance, math_type)]
+        for record in rule_data:
+            format_str = """INSERT INTO rule_sets (rule_type, sql_statement, target_record_count, duration, variance, math_type)
+                    VALUES ("{rule_type}", "{sql_statement}", "{target_record_count}", "{duration}", "{variance}", "{math_type}");"""
+
+            sql_command = format_str.format(rule_type=record[0].lower(), sql_statement=record[1], target_record_count=record[2],
+                                            duration=record[3].lower(), variance=record[4], math_type=record[5].lower())
+            try:
+                self.execute_cursor(sql_command)
+                print("Executing: %s" % (sql_command))
+            except sqlite3.OperationalError:
+                self.database_connection.rollback()
+                print("Database is locked or insert does not match table schema.")
+                exit()
+
+    def upsert_rulesets_to_database(self, file_store):
+        print([item for item in file_store.read_rulesets_from_file()])
+        return [self.insert_rule_set(item["rule_type"], item["sql_statement"], item["target_record_count"], item["duration"], item["variance"], item["math_type"]) for item in file_store.read_rulesets_from_file()]
 
     def select_query_history(self, sql_statement, execution_date, record_count, account, rule_set_duration):
         """Selects all query history where a specified (input) duration is removed from an input datetime."""
@@ -446,31 +530,6 @@ class Database:
                 self.database_connection.rollback()
                 print("Database is locked or insert does not match table schema.")
 
-    def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance):
-        # OperationalError = Insert doesn't match table schema
-        # OperationalError = Database may be locked
-        # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
-        rule_data = [(rule_type, sql_statement, target_record_count, duration, variance)]
-        for record in rule_data:
-            format_str = """INSERT INTO rule_sets (rule_type, sql_statement, target_record_count, duration, variance)
-                    VALUES ("{rule_type}", "{sql_statement}", "{target_record_count}", "{duration}", "{variance}");"""
-
-            sql_command = format_str.format(rule_type=record[0], sql_statement=record[1], target_record_count=record[2],
-                                            duration=record[3], variance=record[4])
-            try:
-                self.execute_cursor(sql_command)
-                print("Executing: %s" % (sql_command))
-            except sqlite3.OperationalError:
-                self.database_connection.rollback()
-                print("Database is locked or insert does not match table schema.")
-                exit()
-
-    def select_query_results(self, table, fields):
-        table = "queries"
-        fields = ["sql_statement", "datetime", "record_count", "account"]
-        return self.select_data(table, fields)
-        pass
-
     def select_rule_sets(self, table, fields):
         table = "rule_sets"
         fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
@@ -478,20 +537,28 @@ class Database:
         pass
 
 def main():
-    # print(run_tests("../outputs/accounts.csv", "../inputs/queries.csv"))
-    if True:
+    if True: #Eventually will check for user input.
         start_time = time.time()
-        account_file = ("../outputs/accounts.csv", ["username", "pw"])
-        query_file = ("../inputs/queries.csv", ["query"])
+        account_file_config = ("../outputs/accounts.csv", ["username", "pw"])
+        query_file_config = ("../inputs/queries.csv", ["query"])
+        rule_set_config = ("../inputs/rule_sets.csv", ["rule_type", "sql_statement", "target_record_count", "duration", "variance", "math_type"])
+        rule_set_object = FileStore(rule_set_config[0], rule_set_config[1])
+
         database_store = ("queries_database", "../db/")
-        query = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-29 00:00:00',
+
+        query_dummy_data = {'sql_statement': "SELECT * FROM CONTACTS", 'record_count': "0", 'execution_date':'2016-12-29 00:00:00',
                  'account': 'Test Account'}
-        rule_set = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0",
+        rule_set_dummy_data = {'rule_set_type':'vector', 'sql_statement': "SELECT * FROM CONTACTS", 'target_record_count':"0",
                     'duration':'weekly', "threshold":"0", 'account':''}
         #test_session.query_rule_match(query, rule_set)
-        test_session = TestRunner(account_file, query_file,database_store[0], database_store[1])
+
+        test_session = TestRunner(account_file_config, query_file_config, database_store[0], database_store[1])
+
+        #print(rule_set_object.read_rulesets_from_file())
+        #test_session.database_connection.upsert_rulesets_to_database(rule_set_object)
+        print(TestRunner.calculate_proportion(1000, 1050))
         # print(active_tests.execute_queries_on_accounts())
-        print(test_session.query_passes_tests(query, rule_set))
+        # print(test_session.query_passes_tests(query_dummy_data, rule_set_dummy_data))
         #print(queries_database.select_query_history("SELECT * FROM CONTACTS", "2016-12-28 23:50:04", "1000",
         # "Test Account", "weekly"))
         print("--- %s seconds elapsed ---" % (time.time() - start_time))
