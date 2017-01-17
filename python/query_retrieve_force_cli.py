@@ -429,6 +429,7 @@ class TestRunner:
 
 
 class Database:
+    # TODO: Ensure data processing is ensuring NONE is passed as NULL into database and not empty string
 
     def __init__(self, name, location):
         self.location = location
@@ -445,7 +446,7 @@ class Database:
         print("Initialising database with default schema.")
         query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement TEXT, datetime TEXT, record_count INTEGER, account TEXT)"""
         self.execute_cursor(query_table_sql_statement)
-        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type TEXT, sql_statement TEXT, target_record_count INTEGER, duration TEXT, variance REAL, math_type TEXT, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance, math_type) ON CONFLICT IGNORE)"""
+        rule_set_table_sql_statement = """CREATE TABLE rule_sets (rule_set_id INTEGER PRIMARY KEY, rule_type TEXT, sql_statement TEXT, target_record_count INTEGER, duration TEXT, variance REAL, math_type TEXT, account TEXT, UNIQUE (rule_type, sql_statement, target_record_count, duration, variance, math_type, account) ON CONFLICT IGNORE)"""
         self.execute_cursor(rule_set_table_sql_statement)
 
     def open_cursor(self, sql_statement):
@@ -555,8 +556,8 @@ def main():
         test_session = TestRunner(account_file_config, query_file_config, database_store[0], database_store[1])
 
         #print(rule_set_object.read_rulesets_from_file())
-        #test_session.database_connection.upsert_rulesets_to_database(rule_set_object)
-        print(TestRunner.calculate_proportion(1000, 1050))
+        test_session.database_connection.upsert_rulesets_to_database(rule_set_object)
+        #print(TestRunner.calculate_proportion(1000, 1050))
         # print(active_tests.execute_queries_on_accounts())
         # print(test_session.query_passes_tests(query_dummy_data, rule_set_dummy_data))
         #print(queries_database.select_query_history("SELECT * FROM CONTACTS", "2016-12-28 23:50:04", "1000",
