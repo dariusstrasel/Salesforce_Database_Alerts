@@ -393,16 +393,18 @@ class TestRunner:
         return False
 
     @staticmethod
-    def type_is_int(data) -> bool:
+    def type_is_int(test_object) -> bool:
+        """Returns True or False if the input data is of type Integer."""
         try:
-            [int(data) for data in data]
+            # Create list comprehension that tries to cast each function parameter to an integer.
+            [int(argument_value) for argument_value in test_object]
             return True
-        except TypeError:
+        except TypeError: # Int() will fail if function parameter is not an integer.
             return False
 
     @staticmethod
     def calculate_proportion(data1, data2) -> int:
-        """Returns the variance of a population as input."""
+        """Returns the proportional ratio between two input parameter values."""
         if TestRunner.type_is_int([data1, data2]):
             proportion = 100 * (data2 - data1) / data1
             return proportion
@@ -410,28 +412,30 @@ class TestRunner:
     # 1/100 = 2/
     @staticmethod
     def calculate_difference(data1, data2) -> int:
-        """Returns the variance of a population as input."""
+        """Returns the difference between two input parameter values."""
         if TestRunner.type_is_int([data1, data2]):
             difference = data1 - data2
             return difference
 
     @staticmethod
     def calculate_variance(data):
-        """Returns the variance of a population as input."""
+        """Returns the variance among an entire input population."""
         if TestRunner.type_is_int(data):
             return statistics.variance(data)
 
     @staticmethod
     def calculate_stdev(data):
-        """Returns the variance of a population as input."""
+        """Returns the standard deviation among an entire input population."""
         if TestRunner.type_is_int(data):
             return statistics.stdev(data)
 
 
 class Database:
+    """Class object that serves as a connection interface to an on-file database."""
     # TODO: Ensure data processing is ensuring NONE is passed as NULL into database and not empty string
 
     def __init__(self, name, location):
+        """Will start a database connection or create one if the specified database does not exist."""
         self.location = location
         self.filename = name + '.db'
         self.database_path = self.location + self.filename
@@ -443,6 +447,7 @@ class Database:
             self.database_connection = sqlite3.connect(self.database_path)
 
     def init_database(self):
+        """Executes a procedure of statements that initializes the database tables with explicit SQL DDL."""
         print("Initialising database with default schema.")
         query_table_sql_statement = """CREATE TABLE queries (query_id INTEGER PRIMARY KEY,sql_statement TEXT, datetime TEXT, record_count INTEGER, account TEXT)"""
         self.execute_cursor(query_table_sql_statement)
@@ -490,6 +495,7 @@ class Database:
                 exit()
 
     def insert_rule_set(self, rule_type, sql_statement, target_record_count, duration, variance, math_type):
+        """Executes a INSERT RULE_SET cursor statement to the objecg self database connection."""
         # OperationalError = Insert doesn't match table schema
         # OperationalError = Database may be locked
         # query_data = [("SELECT * FROM FAKETABLE", "12-27-2016", "0", "Test Account")]
@@ -509,6 +515,7 @@ class Database:
                 exit()
 
     def upsert_rulesets_to_database(self, file_store):
+        """Calls a database INSERT RULE_SET SQL statement using a CSV file as source."""
         print([item for item in file_store.read_rulesets_from_file()])
         return [self.insert_rule_set(item["rule_type"], item["sql_statement"], item["target_record_count"], item["duration"], item["variance"], item["math_type"]) for item in file_store.read_rulesets_from_file()]
 
@@ -532,6 +539,7 @@ class Database:
                 print("Database is locked or insert does not match table schema.")
 
     def select_rule_sets(self, table, fields):
+        # Stub
         table = "rule_sets"
         fields = ["type", "sql_statement", "target_record_count", "duration", "threshold_of_variance"]
         return self.select_data(table, fields)
